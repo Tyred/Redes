@@ -11,14 +11,13 @@ def sair(conexao):
     print(conexao, 'conexão fechada')
     conexao.fechar()
 
-
+apelido_dict = {}
 def dados_recebidos(conexao, dados):
     if dados == b'':
         return sair(conexao)
     
     conexao.dados_residuais += dados
     
-
     if conexao.dados_residuais.find(b'\n') != -1:
         comandos = conexao.dados_residuais.splitlines(True)
         conexao.dados_residuais = b''
@@ -31,20 +30,42 @@ def dados_recebidos(conexao, dados):
                     conexao.enviar(b':server PONG server :' + comando_splitado[1])
                 
                 if comando_splitado[0] == b'NICK':
-                    nick = comando_splitado[1].rstrip()
-                    if validar_nome(nick):
-                        conexao.enviar(b':server 001 ' + nick + b' :Welcome\r\n')
-                        conexao.enviar(b':server 422 ' + nick + b' :MOTD File is missing\r\n')
+                    apelido = comando_splitado[1].rstrip()
+
+                    if validar_nome(apelido):
+                        if apelido.lower() not in apelido_dict:
+                            apelido_dict[apelido.lower()] = conexao
+                            if conexao.apelido == b'*':
+                                conexao.enviar(b':server 001 %s :Welcome\r\n' % apelido)
+                                conexao.enviar(b':server 422 %s :MOTD File is missing\r\n' % apelido)
+                            else:
+                                del apelido_dict[conexao.apelido]
+                                conexao.enviar(b':%s NICK %s\r\n' % (conexao.apelido, apelido))
+                            conexao.apelido = apelido
+
+                        else:
+                            conexao.enviar(b':server 433 %s %s :Nickname is already in use\r\n' % (conexao.apelido, apelido))
                     else:
-                        conexao.enviar(b':server 432 * ' + nick + b' :Erroneous nickname\r\n')
+                        conexao.enviar(b':server 432 * ' + apelido + b' :Erroneous nickname\r\n')
+                
+                if comando_splitado[0] == b'PRIVMSG':
+                    destinatario = comando_splitado[1]
                     
-            else:                 
+                    if destinatario.lower() != conexao.apelido.lower() and destinatario.lower() in apelido_dict \
+                       and comando.find(b':') != -1:
+                        conteudo = comando.split(b':', 1)[1]
+                        conexao_destino = apelido_dict[destinatario.lower()]
+                        conexao_destino.enviar(b':%s PRIVMSG %s :%s' % (conexao.apelido, destinatario, conteudo))
+
+            else:
                 conexao.dados_residuais += comando
                 
     print(conexao, dados)
 
 def conexao_aceita(conexao):
     print(conexao, 'nova conexão')
+    conexao.dados_residuais = b''
+    conexao.apelido = b'*'
     conexao.registrar_recebedor(dados_recebidos)
 
 

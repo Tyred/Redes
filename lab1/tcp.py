@@ -15,8 +15,7 @@ class Servidor:
 class Conexao:
     def __init__(self, accept_tuple):
         self.s, _ = accept_tuple
-        self.dados_residuais = b''
-
+        
     def registrar_recebedor(self, callback):
         asyncio.get_event_loop().add_reader(self.s, lambda: callback(self, self.s.recv(8192)))
 
