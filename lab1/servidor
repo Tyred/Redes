@@ -6,12 +6,19 @@ import re
 def validar_nome(nome):
     return re.match(br'^[a-zA-Z][a-zA-Z0-9_-]*$', nome) is not None
 
+def validar_canal(canal):
+    if canal[0] == 35:
+        return validar_nome(canal[1:])
+    else:
+        return False
 
 def sair(conexao):
     print(conexao, 'conexão fechada')
     conexao.fechar()
 
+
 apelido_dict = {}
+canais = {}
 def dados_recebidos(conexao, dados):
     if dados == b'':
         return sair(conexao)
@@ -51,11 +58,37 @@ def dados_recebidos(conexao, dados):
                 if comando_splitado[0] == b'PRIVMSG':
                     destinatario = comando_splitado[1]
                     
-                    if destinatario.lower() != conexao.apelido.lower() and destinatario.lower() in apelido_dict \
-                       and comando.find(b':') != -1:
-                        conteudo = comando.split(b':', 1)[1]
-                        conexao_destino = apelido_dict[destinatario.lower()]
-                        conexao_destino.enviar(b':%s PRIVMSG %s :%s' % (conexao.apelido, destinatario, conteudo))
+                    if destinatario[0] != 35:
+                        if destinatario.lower() != conexao.apelido.lower() and destinatario.lower() in apelido_dict \
+                        and comando.find(b':') != -1:
+                            conteudo = comando.split(b':', 1)[1]
+                            conexao_destino = apelido_dict[destinatario.lower()]
+                            conexao_destino.enviar(b':%s PRIVMSG %s :%s' % (conexao.apelido, destinatario, conteudo))
+
+                    elif destinatario.lower() in canais and comando.find(b':') != -1:
+                            conteudo = comando.split(b':', 1)[1]
+                            canal_destino = canais[destinatario.lower()]
+                            for membro in canal_destino:
+                                if membro != conexao:
+                                    membro.enviar(b':%s PRIVMSG %s :%s' % (conexao.apelido, destinatario, conteudo))
+
+                if comando_splitado[0] == b'JOIN':
+                    canal = comando_splitado[1].rstrip()
+                    
+                    if validar_canal(canal):
+                        if canal.lower() not in canais:
+                            canais[canal.lower()] = {conexao}
+                        else:
+                            canais[canal.lower()].add(conexao)
+                    else: 
+                        conexao.enviar(b':server 403 %s :No such channel\r\n' % canal)
+                    
+                    for membro in canais[canal.lower()]:
+                        membro.enviar(b':%s JOIN :%s\r\n' % (conexao.apelido, canal))
+
+
+
+
 
             else:
                 conexao.dados_residuais += comando
