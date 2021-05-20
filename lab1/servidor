@@ -86,9 +86,14 @@ def dados_recebidos(conexao, dados):
                     for membro in canais[canal.lower()]:
                         membro.enviar(b':%s JOIN :%s\r\n' % (conexao.apelido, canal))
 
+                if comando_splitado[0] == b'PART':
+                    canal = comando_splitado[1].rstrip()
+                    for membro in canais[canal.lower()]:
+                        membro.enviar(b':%s PART %s\r\n' % (conexao.apelido, canal))
 
-
-
+                    canais[canal.lower()].remove(conexao)
+                    
+                
 
             else:
                 conexao.dados_residuais += comando
