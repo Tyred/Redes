@@ -12,10 +12,6 @@ def validar_canal(canal):
     else:
         return False
 
-def sair(conexao):
-    print(conexao, 'conexão fechada')
-    conexao.fechar()
-
 
 apelido_dict = {}
 canais = {}
@@ -105,6 +101,23 @@ def conexao_aceita(conexao):
     conexao.dados_residuais = b''
     conexao.apelido = b'*'
     conexao.registrar_recebedor(dados_recebidos)
+
+
+def sair(conexao):
+    destinatarios = set()
+    for canal in canais:
+        if conexao in canais[canal]:
+            canais[canal].remove(conexao)
+            for elemento in canais[canal]:
+                if elemento != conexao:
+                    destinatarios.add(elemento)
+
+    for destinatario in destinatarios:
+        destinatario.enviar(b':%s QUIT :Connection closed\r\n' % conexao.apelido)
+            
+    del apelido_dict[conexao.apelido]
+    print(conexao, 'conexão fechada')
+    conexao.fechar()
 
 
 servidor = Servidor(6667)
