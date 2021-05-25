@@ -63,17 +63,18 @@ class Servidor:
 
 
 class Conexao:
-    def __init__(self, servidor, id_conexao, expectedSeqNum, ackNum,seq_noHandShake, srcAddr, srcPort, dstAddr, dstPort):
+    def __init__(self, servidor, id_conexao, expectedSeqNum, ackNum, seq_noHandShake, srcAddr, srcPort, dstAddr, dstPort):
         self.servidor = servidor
         self.id_conexao = id_conexao
         # Adicionado: seq e ack e enderecos e portas.
+        ## Utilizada duas variaveis de controle que sao incrementadas separadamente
         self.expectedSeqNum = expectedSeqNum # Usado no passo 2
-        self.ackNum = ackNum # Usado no passo 3
         self.seq_noHandShake = seq_noHandShake # Usado no passo 3
         self.srcAddr = srcAddr
         self.srcPort = srcPort
         self.dstAddr = dstAddr
         self.dstPort = dstPort
+        self.fechada = False # Variavel logica para sinalizar conexao fechada.
         # ---------------------
         self.callback = None
         self.timer = asyncio.get_event_loop().call_later(1, self._exemplo_timer)  # um timer pode ser criado assim; esta linha é só um exemplo e pode ser removida
@@ -88,8 +89,17 @@ class Conexao:
         # Chame self.callback(self, dados) para passar dados para a camada de aplicação após
         # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
 
+        # Aqui ve se a flag setada é FIN e manda um payload vazio para a camada de aplicação !.
+        if seq_no == self.expectedSeqNum and (flags & (FLAGS_FIN | FLAGS_ACK)) == (FLAGS_FIN | FLAGS_ACK) and not self.fechada :
+            segmentDest = fix_checksum(make_header(self.dstPort , self.srcPort, seq_no, seq_no + 1, FLAGS_ACK), self.dstAddr, self.srcAddr) # Montando pacote de ACK
+            self.seq_no = seq_no
+            self.servidor.rede.enviar(segmentDest, self.srcAddr) # Enviando o pacote ACK montado
+            self.expectedSeqNum = self.expectedSeqNum + 1 # Atualizando o proximo seq esperado.
+            self.callback(self, b'') # Mandando para a camada de aplicação. (TIPO: HTTTP ou o NC)
+
+
         # Apenas necessario garantir de ACK o pacote correto enviado.
-        if seq_no == self.expectedSeqNum:
+        if seq_no == self.expectedSeqNum and len(payload) != 0 and not self.fechada:
             segmentDest = fix_checksum(make_header(self.dstPort , self.srcPort, seq_no, (seq_no+len(payload)), FLAGS_ACK), self.dstAddr, self.srcAddr) # Montando pacote de ACK
             self.seq_no = seq_no
             self.servidor.rede.enviar(segmentDest, self.srcAddr) # Enviando o pacote ACK montado
@@ -128,20 +138,24 @@ class Conexao:
         # - Dividir os pacotes que serao inviados em MSG.
         # - Lembrar de incrementar a variavel na medidade do tamanho dos pacotes.
 
+        #_, _, seq, ack, flags, _, _, _ = read_header(dados)
+        #payload = dados[4*(flags>>12):]
+        #print("Esse é o valor: %r" % payload)
         # Dividindo dados em partes com tamanho MSS.
         ## lista de partes MSS de dados.
         partes = [dados[i:i+MSS] for i in range(0, len(dados), MSS)]
-
         ## POR ALGUM MOTIVO NAO TA CHEGANDO O PAYLOAD ...
         for parte in partes:
-            segmentDest = fix_checksum(make_header(self.srcPort , self.dstPort, self.seq_noHandShake, self.expectedSeqNum, FLAGS_ACK) + parte, self.srcAddr, self.dstAddr) 
-            self.servidor.rede.enviar(segmentDest, self.dstAddr) 
-            self.expectedSeqNum = self.expectedSeqNum + len(parte)
-            #self.callback(self, parte)
+            segmentDest = fix_checksum(make_header(self.srcPort , self.dstPort, self.seq_noHandShake, self.expectedSeqNum, FLAGS_ACK) + parte, self.srcAddr, self.dstAddr)
+            self.servidor.rede.enviar(segmentDest, self.dstAddr)
+            self.seq_noHandShake = self.seq_noHandShake + len(parte)
 
     def fechar(self):
         """
         Usado pela camada de aplicação para fechar a conexão
         """
         # TODO: implemente aqui o fechamento de conexão
-        pass
+        # Envia um segmento com a flag FIN setada ...
+        segmentDest = fix_checksum(make_header(self.srcPort , self.dstPort, self.seq_noHandShake, self.expectedSeqNum, FLAGS_FIN), self.srcAddr, self.dstAddr)
+        self.servidor.rede.enviar(segmentDest, self.dstAddr)
+        self.fechada = True
