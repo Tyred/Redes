@@ -23,7 +23,7 @@ class Servidor:
     def _rdt_rcv(self, src_addr, dst_addr, segment):
         src_port, dst_port, seq_no, ack_no, \
             flags, window_size, checksum, urg_ptr = read_header(segment)
-
+        
         if dst_port != self.porta:
             # Ignora segmentos que não são destinados à porta do nosso servidor
             return
@@ -75,14 +75,22 @@ class Conexao:
         self.dstAddr = dstAddr
         self.dstPort = dstPort
         self.fechada = False # Variavel logica para sinalizar conexao fechada.
+        self.filaSegmentos = [] # Guarda segmentos que nao foram ACK ainda.
         # ---------------------
         self.callback = None
-        self.timer = asyncio.get_event_loop().call_later(1, self._exemplo_timer)  # um timer pode ser criado assim; esta linha é só um exemplo e pode ser removida
+        self.timer = None
+        #self.timer = asyncio.get_event_loop().call_later(0.5, self.reenviaSeg)  # um timer pode ser criado assim; esta linha é só um exemplo e pode ser removida
         #self.timer.cancel()   # é possível cancelar o timer chamando esse método; esta linha é só um exemplo e pode ser removida
 
-    def _exemplo_timer(self):
+    def reenviaSeg(self):
         # Esta função é só um exemplo e pode ser removida
+        if len(self.filaSegmentos) >= 2:
+            segmentoReenviar = self.filaSegmentos.pop(1)
+            self.servidor.rede.enviar(segmentoReenviar, self.dstAddr)
+
+        self.timer = None
         print('Este é um exemplo de como fazer um timer')
+
 
     def _rdt_rcv(self, seq_no, ack_no, flags, payload):
         # TODO: trate aqui o recebimento de segmentos provenientes da camada de rede.
@@ -90,6 +98,16 @@ class Conexao:
         # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
 
         # Aqui ve se a flag setada é FIN e manda um payload vazio para a camada de aplicação !.
+        if seq_no == self.expectedSeqNum and (flags & (FLAGS_ACK)) == (FLAGS_ACK) and not self.fechada:
+            if len(self.filaSegmentos) >= 2: 
+                _, _, seq, ack, flags, _, _, _ = read_header(self.filaSegmentos[1])
+                if ack_no > seq:
+                    self.filaSegmentos.pop(1)
+                if len(self.filaSegmentos) >= 2:
+                    self.timer = asyncio.get_event_loop().call_later(0.5, self.reenviaSeg)
+                else:
+                    self.timer.cancel()
+
         if seq_no == self.expectedSeqNum and (flags & (FLAGS_FIN | FLAGS_ACK)) == (FLAGS_FIN | FLAGS_ACK) and not self.fechada :
             segmentDest = fix_checksum(make_header(self.dstPort , self.srcPort, seq_no, seq_no + 1, FLAGS_ACK), self.dstAddr, self.srcAddr) # Montando pacote de ACK
             self.seq_no = seq_no
@@ -97,9 +115,8 @@ class Conexao:
             self.expectedSeqNum = self.expectedSeqNum + 1 # Atualizando o proximo seq esperado.
             self.callback(self, b'') # Mandando para a camada de aplicação. (TIPO: HTTTP ou o NC)
 
-
         # Apenas necessario garantir de ACK o pacote correto enviado.
-        if seq_no == self.expectedSeqNum and len(payload) != 0 and not self.fechada:
+        if seq_no == self.expectedSeqNum and len(payload) != 0 and not self.fechada and (flags & (FLAGS_ACK)) == (FLAGS_ACK):
             segmentDest = fix_checksum(make_header(self.dstPort , self.srcPort, seq_no, (seq_no+len(payload)), FLAGS_ACK), self.dstAddr, self.srcAddr) # Montando pacote de ACK
             self.seq_no = seq_no
             self.servidor.rede.enviar(segmentDest, self.srcAddr) # Enviando o pacote ACK montado
@@ -143,12 +160,17 @@ class Conexao:
         #print("Esse é o valor: %r" % payload)
         # Dividindo dados em partes com tamanho MSS.
         ## lista de partes MSS de dados.
+        # Enviar inicia o timer.
         partes = [dados[i:i+MSS] for i in range(0, len(dados), MSS)]
         ## POR ALGUM MOTIVO NAO TA CHEGANDO O PAYLOAD ...
         for parte in partes:
             segmentDest = fix_checksum(make_header(self.srcPort , self.dstPort, self.seq_noHandShake, self.expectedSeqNum, FLAGS_ACK) + parte, self.srcAddr, self.dstAddr)
             self.servidor.rede.enviar(segmentDest, self.dstAddr)
             self.seq_noHandShake = self.seq_noHandShake + len(parte)
+            self.filaSegmentos.append(segmentDest)
+            if not self.timer:
+                print("VAI QUE VAIIIII")
+                self.timer = asyncio.get_event_loop().call_later(0.5, self.reenviaSeg)
 
     def fechar(self):
         """
