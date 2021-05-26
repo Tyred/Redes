@@ -2,6 +2,7 @@ import asyncio
 import os
 import struct
 import sys
+import time
 from tcputils import *
 
 
@@ -76,6 +77,11 @@ class Conexao:
         self.dstPort = dstPort
         self.fechada = False # Variavel logica para sinalizar conexao fechada.
         self.filaSegmentos = [] # Guarda segmentos que nao foram ACK ainda.
+        self.TimeoutInterval = 0.5
+        self.SampleRTT = 0
+        self.EstimatedRTT = 0
+        self.DevRTT = 0
+        self.start = 0
         # ---------------------
         self.callback = None
         self.timer = None
@@ -83,29 +89,50 @@ class Conexao:
         #self.timer.cancel()   # é possível cancelar o timer chamando esse método; esta linha é só um exemplo e pode ser removida
 
     def reenviaSeg(self):
-        # Esta função é só um exemplo e pode ser removida
+        self.timer = None
+        self.start = 0
         if len(self.filaSegmentos) >= 2:
+            print("Entrou aqui")
             segmentoReenviar = self.filaSegmentos.pop(1)
             self.servidor.rede.enviar(segmentoReenviar, self.dstAddr)
 
-        self.timer = None
-        print('Este é um exemplo de como fazer um timer')
 
 
     def _rdt_rcv(self, seq_no, ack_no, flags, payload):
         # TODO: trate aqui o recebimento de segmentos provenientes da camada de rede.
         # Chame self.callback(self, dados) para passar dados para a camada de aplicação após
         # garantir que eles não sejam duplicados e que tenham sido recebidos em ordem.
-
+        
         # Aqui ve se a flag setada é FIN e manda um payload vazio para a camada de aplicação !.
+        if self.timer != None:
+                self.timer.cancel()
         if seq_no == self.expectedSeqNum and (flags & (FLAGS_ACK)) == (FLAGS_ACK) and not self.fechada:
-            if len(self.filaSegmentos) >= 2: 
+            
+            if self.start != 0:
+                end = time.time()
+                if self.TimeoutInterval == 0.5:
+                    self.SampleRTT = end - self.start
+                  #  print("SampleRTT : %.2f" % self.SampleRTT)
+                    self.EstimatedRTT = self.SampleRTT
+                    self.DevRTT = self.SampleRTT/2 
+                    self.TimeoutInterval = self.EstimatedRTT + 4*self.DevRTT 
+                else:
+                    self.SampleRTT = end - self.start
+                   # print("SampleRTT 2: %.3f" % self.SampleRTT)
+                    self.EstimatedRTT = (1-0.125)*self.EstimatedRTT + 0.125*self.SampleRTT
+                    self.DevRTT = (1-0.25)*self.DevRTT + 0.25*abs(self.SampleRTT - self.EstimatedRTT)
+                    self.TimeoutInterval = self.EstimatedRTT + 4*self.DevRTT 
+                print("TimeoutInterval Calculado: %.2f" % self.TimeoutInterval)
+            
+            if len(self.filaSegmentos) >= 2:   
                 _, _, seq, ack, flags, _, _, _ = read_header(self.filaSegmentos[1])
                 if ack_no > seq:
                     self.filaSegmentos.pop(1)
                 if len(self.filaSegmentos) >= 2:
-                    self.timer = asyncio.get_event_loop().call_later(0.5, self.reenviaSeg)
-                else:
+                    print("TimeoutInterval Usado Reenvio:", self.TimeoutInterval)
+                    self.timer = asyncio.get_event_loop().call_later(self.TimeoutInterval, self.reenviaSeg)
+                elif self.timer != None:               
+                    #print("alalala")     
                     self.timer.cancel()
 
         if seq_no == self.expectedSeqNum and (flags & (FLAGS_FIN | FLAGS_ACK)) == (FLAGS_FIN | FLAGS_ACK) and not self.fechada :
@@ -124,6 +151,19 @@ class Conexao:
             self.callback(self, payload) # Mandando para a camada de aplicação. (TIPO: HTTTP ou o NC)
 
         print('recebido payload: %r' % payload)
+        #self.end = time.time()
+        #if self.TimeoutInterval == 0.5:
+        #    self.SampleRTT = self.end - self.start
+        #    print(self.SampleRTT)
+        #    self.EstimatedRTT = self.SampleRTT
+        #    self.DevRTT = self.SampleRTT/2 
+        #else:
+        #    print(self.SampleRTT)
+        #    self.SampleRTT = self.end - self.start
+        #    self.EstimatedRTT = (1-0.125)*self.EstimatedRTT + 0.125*self.SampleRTT
+        #    self.DevRTT = (1-0.25) * self.DevRTT + 0.25*abs(self.SampleRTT - self.EstimatedRTT)
+        #    self.TimeoutInterval = self.EstimatedRTT + 4*self.DevRTT
+        #print("TimeoutInterval:", self.TimeoutInterval)
 
     # Os métodos abaixo fazem parte da API
 
@@ -162,15 +202,22 @@ class Conexao:
         ## lista de partes MSS de dados.
         # Enviar inicia o timer.
         partes = [dados[i:i+MSS] for i in range(0, len(dados), MSS)]
+        if len(dados)%MSS != 0: # Tem que testar, mas se pa conserta o caso de ter resto 
+            partes.append(dados[-len(dados)%MSS:])
+        
         ## POR ALGUM MOTIVO NAO TA CHEGANDO O PAYLOAD ...
         for parte in partes:
             segmentDest = fix_checksum(make_header(self.srcPort , self.dstPort, self.seq_noHandShake, self.expectedSeqNum, FLAGS_ACK) + parte, self.srcAddr, self.dstAddr)
+            
+            #print("Start:", self.start)
             self.servidor.rede.enviar(segmentDest, self.dstAddr)
             self.seq_noHandShake = self.seq_noHandShake + len(parte)
             self.filaSegmentos.append(segmentDest)
-            if not self.timer:
-                print("VAI QUE VAIIIII")
-                self.timer = asyncio.get_event_loop().call_later(0.5, self.reenviaSeg)
+            self.start = time.time()
+            print("TimeoutInterval Usado:", self.TimeoutInterval)
+            if self.timer != None:
+                self.timer.cancel()
+            self.timer = asyncio.get_event_loop().call_later(self.TimeoutInterval, self.reenviaSeg)
 
     def fechar(self):
         """
