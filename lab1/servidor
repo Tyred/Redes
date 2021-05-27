@@ -79,8 +79,18 @@ def dados_recebidos(conexao, dados):
                     else: 
                         conexao.enviar(b':server 403 %s :No such channel\r\n' % canal)
                     
+                    lista_nomes = []
                     for membro in canais[canal.lower()]:
                         membro.enviar(b':%s JOIN :%s\r\n' % (conexao.apelido, canal))
+                        lista_nomes.append(membro.apelido)
+                    conexao.enviar(b':server 353 %s = %s :' % (conexao.apelido, canal))
+                    
+                    lista_nomes.sort()
+                    for nome in lista_nomes:
+                        conexao.enviar(b'%s ' % nome) # ta enviando um b' ' a mais...
+                    conexao.enviar(b'\r\n')
+                    conexao.enviar(b':server 366 %s %s :End of /NAMES list.\r\n' % (conexao.apelido, canal))
+                    
 
                 if comando_splitado[0] == b'PART':
                     canal = comando_splitado[1].rstrip()
