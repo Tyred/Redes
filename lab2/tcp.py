@@ -5,7 +5,6 @@ import sys
 import time
 from tcputils import *
 
-
 class Servidor:
     def __init__(self, rede, porta):
         self.rede = rede
@@ -92,7 +91,6 @@ class Conexao:
         self.timer = None
         self.start = 0
         if len(self.filaSegmentos) >= 2:
-            print("Entrou aqui")
             segmentoReenviar = self.filaSegmentos.pop(1)
             self.servidor.rede.enviar(segmentoReenviar, self.dstAddr)
 
@@ -122,14 +120,12 @@ class Conexao:
                     self.EstimatedRTT = (1-0.125)*self.EstimatedRTT + 0.125*self.SampleRTT
                     self.DevRTT = (1-0.25)*self.DevRTT + 0.25*abs(self.SampleRTT - self.EstimatedRTT)
                     self.TimeoutInterval = self.EstimatedRTT + 4*self.DevRTT 
-                print("TimeoutInterval Calculado: %.2f" % self.TimeoutInterval)
             
             if len(self.filaSegmentos) >= 2:   
                 _, _, seq, ack, flags, _, _, _ = read_header(self.filaSegmentos[1])
                 if ack_no > seq:
                     self.filaSegmentos.pop(1)
                 if len(self.filaSegmentos) >= 2:
-                    print("TimeoutInterval Usado Reenvio:", self.TimeoutInterval)
                     self.timer = asyncio.get_event_loop().call_later(self.TimeoutInterval, self.reenviaSeg)
                 elif self.timer != None:               
                     #print("alalala")     
@@ -214,7 +210,6 @@ class Conexao:
             self.seq_noHandShake = self.seq_noHandShake + len(parte)
             self.filaSegmentos.append(segmentDest)
             self.start = time.time()
-            print("TimeoutInterval Usado:", self.TimeoutInterval)
             if self.timer != None:
                 self.timer.cancel()
             self.timer = asyncio.get_event_loop().call_later(self.TimeoutInterval, self.reenviaSeg)
