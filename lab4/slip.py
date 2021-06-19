@@ -1,3 +1,5 @@
+import struct
+
 class CamadaEnlace:
     ignore_checksum = False
 
@@ -51,7 +53,18 @@ class Enlace:
         # TODO: Preencha aqui com o código para enviar o datagrama pela linha
         # serial, fazendo corretamente a delimitação de quadros e o escape de
         # sequências especiais, de acordo com o protocolo CamadaEnlace (RFC 1055).
-        pass
+        #for byte in datagrama:
+        datagrama_len = len(datagrama)
+        datagrama = struct.unpack(str(datagrama_len) + 'c', datagrama)
+        new_datagrama = b''
+        for byte in datagrama:
+            if byte == b'\xc0':
+                new_datagrama += b'\xdb\xdc'
+            elif byte == b'\xdb':
+                new_datagrama += b'\xdb\xdd'
+            else:
+                new_datagrama += byte
+        self.linha_serial.enviar(b'\xc0' + new_datagrama + b'\xc0')
 
     def __raw_recv(self, dados):
         # TODO: Preencha aqui com o código para receber dados da linha serial.
