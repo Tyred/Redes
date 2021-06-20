@@ -80,5 +80,22 @@ class Enlace:
             datagrama = self.residual_data.split(b'\xc0')
             for i in range(len(datagrama)-1):
                 if datagrama[i] != b'':
-                    self.callback(datagrama[i])
+                    datagrama_len = len(datagrama[i])
+                    datagrama[i] = struct.unpack(str(datagrama_len) + 'c', datagrama[i])
+                    new_datagrama = b''
+                    is_db = False
+                    for byte in datagrama[i]:
+                        if is_db:
+                            if byte == b'\xdc':
+                                new_datagrama += b'\xc0'
+                            elif byte == b'\xdd':
+                                new_datagrama += b'\xdb'
+                            else:
+                                new_datagrama += byte        
+                        elif byte != b'\xdb':
+                            new_datagrama += byte
+                        is_db = byte == b'\xdb'
+                        #print(byte)
+                        #print(is_db)
+                    self.callback(new_datagrama)
             self.residual_data = datagrama[-1]
