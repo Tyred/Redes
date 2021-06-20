@@ -85,6 +85,9 @@ class Enlace:
                         elif byte != b'\xdb':
                             new_datagrama += byte
                         is_db = byte == b'\xdb'
-                    self.callback(new_datagrama)
-                    
+                    try:
+                        self.callback(new_datagrama)
+                    except:
+                        pass
+               
             self.residual_data = datagrama[-1]
