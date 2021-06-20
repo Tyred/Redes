@@ -51,10 +51,6 @@ class Enlace:
         self.callback = callback
 
     def enviar(self, datagrama):
-        # TODO: Preencha aqui com o código para enviar o datagrama pela linha
-        # serial, fazendo corretamente a delimitação de quadros e o escape de
-        # sequências especiais, de acordo com o protocolo CamadaEnlace (RFC 1055).
-        #for byte in datagrama:
         datagrama_len = len(datagrama)
         datagrama = struct.unpack(str(datagrama_len) + 'c', datagrama)
         new_datagrama = b''
@@ -68,13 +64,6 @@ class Enlace:
         self.linha_serial.enviar(b'\xc0' + new_datagrama + b'\xc0')
 
     def __raw_recv(self, dados):
-        # TODO: Preencha aqui com o código para receber dados da linha serial.
-        # Trate corretamente as sequências de escape. Quando ler um quadro
-        # completo, repasse o datagrama contido nesse quadro para a camada
-        # superior chamando self.callback. Cuidado pois o argumento dados pode
-        # vir quebrado de várias formas diferentes - por exemplo, podem vir
-        # apenas pedaços de um quadro, ou um pedaço de quadro seguido de um
-        # pedaço de outro, ou vários quadros de uma vez só.
         self.residual_data += dados
         if self.residual_data.find(b'\xc0') != -1:
             datagrama = self.residual_data.split(b'\xc0')
@@ -92,10 +81,10 @@ class Enlace:
                                 new_datagrama += b'\xdb'
                             else:
                                 new_datagrama += byte        
+                        
                         elif byte != b'\xdb':
                             new_datagrama += byte
                         is_db = byte == b'\xdb'
-                        #print(byte)
-                        #print(is_db)
                     self.callback(new_datagrama)
+                    
             self.residual_data = datagrama[-1]
